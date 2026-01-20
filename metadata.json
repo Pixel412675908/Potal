@@ -1,0 +1,8 @@
+{
+  "name": " Portal Web 24👾",
+  "description": "A centralized and secure bank of web content, featuring a premium home screen, advanced link management, and integrated Gemini AI tools.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
