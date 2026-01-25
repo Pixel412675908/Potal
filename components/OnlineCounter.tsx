@@ -9,17 +9,20 @@ interface OnlineCounterProps {
 }
 
 const OnlineCounter: React.FC<OnlineCounterProps> = ({ isDark = false }) => {
-  // Inicializamos com 1 para garantir feedback imediato de conexão
-  const [state, setState] = useState<PresenceState>({ total: 1, byCountry: {} });
+  // Inicializamos vazio (0) para que os dados reais preencham a tela
+  const [state, setState] = useState<PresenceState>({ total: 0, byCountry: {} });
   const [showTooltip, setShowTooltip] = useState(false);
 
   useEffect(() => {
-    // Subscreve ao serviço singleton global
+    // Conecta ao Singleton que gerencia a sala global 'global-tracking-room'
     const unsubscribe = presence.subscribe((newState) => {
       setState(newState);
     });
     return unsubscribe;
   }, []);
+
+  // Exibimos pelo menos 1 (o próprio usuário) enquanto os dados sincronizam
+  const displayTotal = Math.max(state.total, state.total > 0 ? state.total : 1);
 
   return (
     <div className="relative inline-block">
@@ -38,7 +41,7 @@ const OnlineCounter: React.FC<OnlineCounterProps> = ({ isDark = false }) => {
         </div>
         
         <span className="text-[12px] font-black tabular-nums tracking-tighter">
-          {state.total}
+          {displayTotal}
         </span>
       </div>
 
@@ -48,14 +51,17 @@ const OnlineCounter: React.FC<OnlineCounterProps> = ({ isDark = false }) => {
         }`}>
           <header className="flex items-center justify-between mb-4 px-1">
              <h4 className="text-[8px] font-black uppercase tracking-[0.2em] opacity-30">
-              Rede Global Online
+              Rede Realtime Global
             </h4>
-            <i className="fa-solid fa-earth-americas text-[10px] opacity-20"></i>
+            <i className="fa-solid fa-tower-broadcast text-[10px] opacity-20"></i>
           </header>
           
           <div className="space-y-3 max-h-48 overflow-y-auto scrollbar-thin">
             {Object.keys(state.byCountry).length === 0 ? (
-               <div className="text-[10px] font-bold opacity-20 text-center py-2 italic">Sincronizando nós...</div>
+               <div className="flex flex-col items-center py-4 opacity-30">
+                  <i className="fa-solid fa-circle-notch fa-spin text-xs mb-2"></i>
+                  <span className="text-[9px] font-black uppercase tracking-widest">Sincronizando...</span>
+               </div>
             ) : (
               Object.entries(state.byCountry)
                 .sort((a, b) => b[1].count - a[1].count)
@@ -80,7 +86,7 @@ const OnlineCounter: React.FC<OnlineCounterProps> = ({ isDark = false }) => {
           </div>
           
           <div className={`mt-4 pt-3 border-t text-[6px] font-black text-center opacity-20 uppercase tracking-[0.3em] ${isDark ? 'border-zinc-900' : 'border-gray-100'}`}>
-            Protocolo Realtime Ativo
+            Channel: global-tracking-room
           </div>
         </div>
       )}
