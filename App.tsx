@@ -1,21 +1,19 @@
 
 // @ts-nocheck
 import React, { useState, useEffect } from 'react';
-import { TabType, LinkItem, UserSettings, HistoryEntry } from './types';
+import { TabType, LinkItem, UserSettings } from './types';
 import { INITIAL_LINKS } from './constants';
 import { storage } from './services/storageService';
+import { activityService } from './services/activityService';
 import Home from './components/Home';
 import Dashboard from './components/Dashboard';
 import AIStudio from './components/AIStudio';
 import Settings from './components/Settings';
-import OnlineCounter from './components/OnlineCounter';
+import LiveActivityFeed from './components/LiveActivityFeed';
 import WifiDiagnosisPanel from './components/WifiDiagnosisPanel';
 
-// Wallpapers Padrão
 const DEFAULT_DESKTOP_WP = 'https://i.postimg.cc/MTTBT5T7/bywater-town-by-earl-lan-v0-2ahq6zb9yvcg1.jpg';
 const DEFAULT_MOBILE_WP = 'https://i.postimg.cc/N0089BC6/file-000000004ef471f59bdaff00be7c8e96.png';
-
-// LOCK: PORTAL DE LINKS E SIDEBAR PRESERVADOS
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>(() => {
@@ -58,7 +56,6 @@ const App: React.FC = () => {
     return initialViews;
   });
 
-  // Estado para o Histórico Inteligente (Persistência Automática)
   const [historyLinks, setHistoryLinks] = useState<LinkItem[]>(() => {
     const saved = localStorage.getItem('portal_history');
     try {
@@ -91,7 +88,6 @@ const App: React.FC = () => {
 
   useEffect(() => localStorage.setItem('portal_active_tab', activeTab), [activeTab]);
   
-  // Sincronização automática do Histórico Inteligente com LocalStorage
   useEffect(() => {
     localStorage.setItem('portal_history', JSON.stringify(historyLinks));
   }, [historyLinks]);
@@ -99,10 +95,13 @@ const App: React.FC = () => {
   const toggleFavorite = (linkId: string) => { setFavorites(prev => prev.includes(linkId) ? prev.filter(id => id !== linkId) : [...prev, linkId]); };
   
   const handleLinkClick = (link: LinkItem) => { 
-    // Atualizar visualizações
+    // 1. Registrar atividade REAL no Supabase (Live Feed)
+    activityService.logAction(link.name);
+
+    // 2. Atualizar visualizações locais
     setViews(prev => ({ ...prev, [link.id]: (prev[link.id] || link.baseViews) + 1 })); 
     
-    // Atualizar histórico inteligente (Mover para o topo, remover duplicatas, limitar a 8)
+    // 3. Atualizar histórico inteligente
     setHistoryLinks(prev => {
       const filtered = prev.filter(item => item.id !== link.id);
       const updated = [link, ...filtered].slice(0, 8);
@@ -128,8 +127,9 @@ const App: React.FC = () => {
 
       <div className={`fixed inset-0 pointer-events-none transition-all duration-700 z-[5] ${showWallpaper ? (isDark ? 'bg-black/20' : 'bg-white/10') : (isDark ? 'bg-[#050505]' : 'bg-gray-50')}`} />
       
-      <div className="fixed top-6 right-8 z-[110]">
-        <OnlineCounter isDark={isDark} />
+      {/* NOVO FEED DE ATIVIDADE REAL EM TEMPO REAL */}
+      <div className="fixed top-8 right-8 z-[110]">
+        <LiveActivityFeed isDark={isDark} />
       </div>
 
       <WifiDiagnosisPanel isDark={isDark} isOpen={isWifiPanelOpen} onClose={() => setIsWifiPanelOpen(false)} />
@@ -141,13 +141,9 @@ const App: React.FC = () => {
         {activeTab === 'settings' && <Settings settings={settings} setSettings={setSettings} isDark={isDark} />}
       </main>
 
-      {/* Overlay do Menu Lateral */}
       {isNavOpen && <div className="fixed inset-0 bg-black/60 backdrop-blur-[2px] z-[140]" onClick={() => setIsNavOpen(false)} />}
 
-      {/* SIDEBAR EXPANSÍVEL COM HISTÓRICO INTEGRADO */}
       <div className={`fixed right-0 top-0 h-full z-[150] flex items-center transition-all duration-500 ease-in-out ${isNavOpen ? 'translate-x-0' : 'translate-x-[calc(100%-32px)]'}`}>
-        
-        {/* Botão de Gatilho (Tab) */}
         <button 
           onClick={() => setIsNavOpen(!isNavOpen)} 
           className="w-8 h-20 rounded-l-[1rem] flex items-center justify-center text-white shadow-2xl relative z-[160]" 
@@ -156,10 +152,7 @@ const App: React.FC = () => {
           <i className={`fa-solid fa-chevron-${isNavOpen ? 'right' : 'left'} text-[10px]`}></i>
         </button>
 
-        {/* CONTEÚDO DA SIDEBAR */}
         <div className={`h-full w-[280px] md:w-[320px] shadow-2xl flex flex-col p-6 overflow-hidden backdrop-blur-2xl ${isDark ? 'bg-zinc-950/95 border-l border-zinc-800 text-white' : 'bg-white/95 border-l border-gray-100 text-gray-900'}`}>
-          
-          {/* HEADER NAVEGAÇÃO */}
           <div className="flex justify-between items-center mb-10">
             <h3 className="text-xl font-black italic tracking-tighter uppercase">Menu</h3>
             <div className="flex gap-2">
@@ -169,7 +162,6 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* BOTÕES DE ACESSO RÁPIDO */}
           <div className="grid grid-cols-2 gap-3 mb-10">
             {[
               { id: 'home', icon: 'house', title: 'Home' },
@@ -196,7 +188,6 @@ const App: React.FC = () => {
             ))}
           </div>
 
-          {/* MÓDULO DE SEGURANÇA (Network Sentinel) */}
           <button 
             onClick={() => { setIsWifiPanelOpen(true); setIsNavOpen(false); }}
             className={`w-full py-5 rounded-[2rem] flex items-center justify-center gap-3 mb-10 font-black text-[10px] uppercase tracking-[0.2em] shadow-xl transition-all active:scale-95 bg-blue-600 text-white hover:bg-blue-500`}
@@ -205,7 +196,6 @@ const App: React.FC = () => {
             Segurança & VPN
           </button>
 
-          {/* SEÇÃO DE HISTÓRICO INTELIGENTE (RECENTES) */}
           <div className="flex-1 flex flex-col min-h-0">
             <div className="flex justify-between items-center mb-4 px-2">
               <h4 className="text-[10px] font-black uppercase tracking-[0.4em] opacity-40 flex items-center gap-2">
@@ -247,7 +237,6 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* RODAPÉ SIDEBAR */}
           <footer className="mt-6 pt-6 border-t border-white/5 text-center">
              <p className="text-[7px] font-black uppercase tracking-[0.5em] opacity-20">Network Sentinel v16</p>
           </footer>
