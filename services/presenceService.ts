@@ -3,14 +3,16 @@ import { supabase } from './supabaseClient';
 import { PresenceState } from '../types';
 
 /**
- * PresenceService v4: Supabase Realtime Presence
- * Gerencia a contagem global de usuários online com persistência.
+ * PresenceService v16: Global Realtime Synchronization
+ * Gerencia a contagem global de usuários online garantindo que todos os browsers
+ * se conectem ao mesmo canal estático.
  */
 class PresenceService {
   private subscribers: ((state: PresenceState) => void)[] = [];
   private deviceId: string = '';
   private channel: any = null;
-  private state: PresenceState = { total: 0, byCountry: {} };
+  // Iniciamos com total 1 para evitar o "Bug do Zero" visual
+  private state: PresenceState = { total: 1, byCountry: {} };
   private reconnectTimeout: any = null;
 
   constructor() {
@@ -21,7 +23,7 @@ class PresenceService {
   private initDeviceId() {
     let id = localStorage.getItem('portal_device_id');
     if (!id) {
-      id = 'dev_' + Math.random().toString(36).substring(2, 11);
+      id = 'node_' + Math.random().toString(36).substring(2, 15);
       localStorage.setItem('portal_device_id', id);
     }
     this.deviceId = id;
@@ -32,7 +34,7 @@ class PresenceService {
       this.channel.unsubscribe();
     }
 
-    // Obter dados de localização básicos
+    // Identificação de localidade para o mapa de presença
     let country = 'Global';
     let countryCode = 'UN';
     try {
@@ -41,11 +43,12 @@ class PresenceService {
       country = data.country_name || 'Global';
       countryCode = data.country_code || 'UN';
     } catch (e) {
-      console.warn("GeoIP fail, using default.");
+      console.warn("Presence: Localização baseada em fallback.");
     }
 
-    // Configura o canal de presença com o Supabase
-    this.channel = supabase.channel('online-portal', {
+    // CANAL GLOBAL ESTÁTICO: Todos os usuários DEVEM entrar aqui
+    // O nome 'portal_global_presence_v16' é mandatório para evitar isolamento
+    this.channel = supabase.channel('portal_global_presence_v16', {
       config: {
         presence: {
           key: this.deviceId,
@@ -57,17 +60,17 @@ class PresenceService {
       .on('presence', { event: 'sync' }, () => {
         this.handleSync();
       })
-      .on('presence', { event: 'join' }, ({ key, currentPresences }) => {
-        console.log('Join:', key, currentPresences);
+      .on('presence', { event: 'join' }, ({ key }) => {
+        console.log('Presence Node Joined:', key);
         this.handleSync();
       })
-      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-        console.log('Leave:', key, leftPresences);
+      .on('presence', { event: 'leave' }, ({ key }) => {
+        console.log('Presence Node Left:', key);
         this.handleSync();
       })
       .subscribe(async (status: string) => {
         if (status === 'SUBSCRIBED') {
-          // Track envia os dados do usuário para o cluster do Supabase
+          // Track envia os sinais de "batimento cardíaco" para o cluster
           await this.channel.track({
             country,
             code: countryCode,
@@ -86,7 +89,7 @@ class PresenceService {
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectTimeout = null;
       this.connect();
-    }, 5000);
+    }, 3000);
   }
 
   private handleSync() {
@@ -94,33 +97,34 @@ class PresenceService {
     const byCountry: Record<string, { count: number; code: string }> = {};
     let total = 0;
 
-    // Processa o objeto complexo do Supabase Presence para o nosso formato simplificado
+    // Supabase Presence agrupa por chave (key). Iteramos pelas chaves únicas.
     Object.keys(presenceState).forEach((key) => {
-      const userPresences = presenceState[key];
-      if (userPresences && userPresences.length > 0) {
-        const data = userPresences[0]; // Pegamos a primeira aba/sessão do mesmo dispositivo
-        const countryName = data.country || 'Global';
+      const sessions = presenceState[key];
+      if (sessions && sessions.length > 0) {
+        const primarySession = sessions[0];
+        const countryName = primarySession.country || 'Global';
         
         if (!byCountry[countryName]) {
-          byCountry[countryName] = { count: 0, code: data.code || 'UN' };
+          byCountry[countryName] = { count: 0, code: primarySession.code || 'UN' };
         }
         byCountry[countryName].count++;
         total++;
       }
     });
 
-    this.state = { total, byCountry };
+    // Se por algum motivo o total for 0 (delay de rede), mantemos 1 (o usuário atual)
+    this.state = { total: Math.max(total, 1), byCountry };
     this.broadcast();
   }
 
   private broadcast() {
-    this.subscribers.forEach(cb => cb(this.state));
+    this.subscribers.forEach(cb => cb({ ...this.state }));
   }
 
   subscribe(callback: (state: PresenceState) => void) {
     this.subscribers.push(callback);
-    // Envia o estado atual imediatamente
-    callback(this.state);
+    // Push imediato do estado atual para evitar delay de render
+    callback({ ...this.state });
     return () => {
       this.subscribers = this.subscribers.filter(s => s !== callback);
     };
